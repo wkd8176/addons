@@ -342,6 +342,7 @@ class Kocom(rs485):
 
     def read(self):
         if self.client._connect == False:
+            self.connected = False
             return ''
         try:
             if self.d_type == 'serial':
@@ -359,6 +360,7 @@ class Kocom(rs485):
             return
         self.tick = time.time()
         if self.client._connect == False:
+            self.connected = False
             return
         try:
             if self.d_type == 'serial':
@@ -773,32 +775,34 @@ class Kocom(rs485):
             self.d_mqtt.publish("{}/{}/{}/state".format(HA_PREFIX, HA_FAN, room), v_value)
             logger.info("[To HA]{}/{}/{}/state = {}".format(HA_PREFIX, HA_FAN, room, v_value))
 
-    def get_serial(self, packet_name, packet_len):
-        packet = ''
-        start_flag = False
         while True:
             row_data = self.read()
-            hex_d = row_data.hex()
-            start_hex = ''
-            if packet_name == 'kocom':  start_hex = 'aa'
-            elif packet_name == 'grex_ventilator':  start_hex = 'd1'
-            elif packet_name == 'grex_controller':  start_hex = 'd0'
-            if hex_d == start_hex:
-                start_flag = True
-            if start_flag:
-                packet += hex_d
-
-            if len(packet) >= packet_len:
-                chksum = self.check_sum(packet)
-                if chksum[0]:
-                    self.tick = time.time()
-                    logger.debug("[From {}]{}".format(packet_name, packet))
-                    self.packet_parsing(packet)
-                packet = ''
-                start_flag = False
-            if not self.connected:
+            if row_data is None:
+                self.connected = False
                 logger.debug('[ERROR] 서버 연결이 끊어져 get_serial Thread를 종료합니다.')
                 break
+            else:
+                hex_d = row_data.hex()
+                start_hex = ''
+                if packet_name == 'kocom':
+                    start_hex = 'aa'
+                elif packet_name == 'grex_ventilator':
+                    start_hex = 'd1'
+                elif packet_name == 'grex_controller':
+                    start_hex = 'd0'
+                if hex_d == start_hex:
+                    start_flag = True
+                if start_flag:
+                    packet += hex_d
+
+                if len(packet) >= packet_len:
+                    chksum = self.check_sum(packet)
+                    if chksum[0]:
+                        self.tick = time.time()
+                        logger.debug("[From {}]{}".format(packet_name, packet))
+                        self.packet_parsing(packet)
+                    packet = ''
+                    start_flag = False
 
     def check_sum(self, packet):
         sum_packet = sum(bytearray.fromhex(packet)[:17])
